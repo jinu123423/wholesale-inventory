@@ -681,6 +681,43 @@ const analytics = getAnalytics(app);
   // Initialization
   populateSelects();
   startSync(); 
+  // Expose functions to the HTML buttons
+window.nav = nav;
+window.saveEntry = saveEntry;
+window.calcTotal = calcTotal;
+window.renderDashboard = renderDashboard;
+window.renderDaily = renderDaily;
+window.renderMonthly = renderMonthly;
+window.renderItems = renderItems;
+window.selectItem = selectItem;
+window.renderHistory = renderHistory;
+window.clearH = clearH;
+window.renderStock = renderStock;
+window.doAdj = doAdj;
+window.delTx = delTx;
+
+// Also ensure your navigation logic handles the 'id' correctly
+function nav(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  
+  const targetPage = document.getElementById('page-' + id);
+  if (targetPage) {
+    targetPage.classList.add('active');
+  }
+  
+  if (el) {
+    el.classList.add('active');
+  }
+
+  // Trigger the specific render functions
+  if(id === 'dashboard') renderDashboard();
+  if(id === 'daily') renderDaily();
+  if(id === 'monthly') renderMonthly();
+  if(id === 'items') renderItems();
+  if(id === 'history') renderHistory();
+  if(id === 'stock') renderStock();
+}
 </script>
 </body>
 </html>
