@@ -26,7 +26,13 @@ body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-s
 .header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:0.5px solid var(--border)}
 .logo{font-size:18px;font-weight:500;color:var(--text-primary)}
 .logo b{color:#1D9E75;font-weight:600}
+.hdr-right{display:flex;align-items:center;gap:8px}
 .hdr-date{font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);padding:4px 10px;border-radius:var(--radius-md);border:0.5px solid var(--border)}
+.sync-status{font-size:10px;padding:3px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border);background:var(--bg-secondary);display:flex;align-items:center;gap:5px}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:#8b90a0;flex-shrink:0;transition:background 0.3s}
+.sync-dot.online{background:#5ec47a;box-shadow:0 0 6px #5ec47a88}
+.sync-dot.saving{background:#e0a840;box-shadow:0 0 6px #e0a84088}
+.sync-dot.error{background:#e07070;box-shadow:0 0 6px #e0707088}
 .tabs{display:flex;gap:3px;background:var(--bg-secondary);padding:4px;border-radius:var(--radius-md);border:0.5px solid var(--border);margin-bottom:16px;flex-wrap:wrap}
 .tab{flex:1;min-width:80px;padding:7px 8px;border:none;background:transparent;border-radius:var(--radius-sm);font-size:12px;font-weight:400;color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap}
 .tab.active{background:var(--bg-card);color:var(--text-primary);font-weight:500;border:0.5px solid var(--border)}
@@ -83,6 +89,10 @@ select option{background:var(--bg-secondary);color:var(--text-primary)}
 .isel-btn:hover{border-color:var(--accent);color:var(--accent)}
 .isel-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .tscroll{overflow-x:auto}
+/* Loading overlay */
+#loading-overlay{position:fixed;inset:0;background:var(--bg-primary);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px}
+.spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:var(--bg-secondary)}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
@@ -91,10 +101,23 @@ select option{background:var(--bg-secondary);color:var(--text-primary)}
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- Loading overlay shown while Firebase connects -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div style="font-size:13px;color:var(--text-secondary)">Connecting to database…</div>
+</div>
+
+<div class="app" id="main-app" style="display:none">
 <div class="header">
   <div class="logo">📦 <b>Whole sale</b> Dealer — Inventory</div>
-  <div class="hdr-date" id="hdr-date"></div>
+  <div class="hdr-right">
+    <div class="sync-status" id="sync-status">
+      <span class="sync-dot" id="sync-dot"></span>
+      <span id="sync-label">Connecting…</span>
+    </div>
+    <div class="hdr-date" id="hdr-date"></div>
+  </div>
 </div>
 
 <div class="tabs">
@@ -282,297 +305,15 @@ select option{background:var(--bg-secondary);color:var(--text-primary)}
     <button class="btn btn-primary" onclick="doAdj()">Update Stock</button>
   </div>
 </div>
-</div>
+</div><!-- /main-app -->
+
+<!-- Firebase SDK (compat version — works directly in HTML without bundler) -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 
 <script>
-const ITEMS=['Sehla Rice','Short Steam Rice','Royal Steam Rice','NR Steam Rice','Wheat (Gehun)','Channe','Bajra','Masala Jaat'];
-let txs=[],stock={},avgBuy={};
-
-function load(){
-  try{
-    const t=localStorage.getItem('bt_txs2');
-    const s=localStorage.getItem('bt_stock2');
-    const a=localStorage.getItem('bt_avg2');
-    if(t)txs=JSON.parse(t);
-    if(s)stock=JSON.parse(s);
-    if(a)avgBuy=JSON.parse(a);
-  }catch(e){}
-  ITEMS.forEach(i=>{if(!stock[i])stock[i]=0;if(!avgBuy[i])avgBuy[i]=0;});
-}
-function save(){
-  try{
-    localStorage.setItem('bt_txs2',JSON.stringify(txs));
-    localStorage.setItem('bt_stock2',JSON.stringify(stock));
-    localStorage.setItem('bt_avg2',JSON.stringify(avgBuy));
-  }catch(e){}
-}
-
-const F=n=>Math.round(n).toLocaleString('en-PK');
-function todayStr(){return new Date().toISOString().split('T')[0];}
-function thisMonth(){return new Date().toISOString().slice(0,7);}
-function timeStr(){return new Date().toLocaleTimeString('en-PK',{hour:'2-digit',minute:'2-digit'});}
-function statusBadge(q){if(q<=0)return'<span class="badge b-red">Out</span>';if(q<20)return'<span class="badge b-amber">Low</span>';return'<span class="badge b-green">Good</span>';}
-function profitSpan(p){return`<span class="${p>=0?'profit-pos':'profit-neg'}">Rs.${F(p)}</span>`;}
-
-function nav(id,el){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');
-  el.classList.add('active');
-  if(id==='dashboard')renderDashboard();
-  if(id==='daily')renderDaily();
-  if(id==='monthly')renderMonthly();
-  if(id==='items')renderItems();
-  if(id==='history')renderHistory();
-  if(id==='stock')renderStock();
-}
-
-function calcTotal(){
-  const q=parseFloat(document.getElementById('e-qty').value)||0;
-  const r=parseFloat(document.getElementById('e-rate').value)||0;
-  document.getElementById('e-total').textContent='Rs. '+F(q*r);
-}
-
-function saveEntry(){
-  const type=document.getElementById('e-type').value;
-  const date=document.getElementById('e-date').value;
-  const item=document.getElementById('e-item').value;
-  const qty=parseInt(document.getElementById('e-qty').value);
-  const rate=parseFloat(document.getElementById('e-rate').value);
-  const party=document.getElementById('e-party').value.trim();
-  const notes=document.getElementById('e-notes').value.trim();
-  if(!date||!qty||qty<1||!rate||rate<0){showAlert('Fill in date, quantity and rate.','warn');return;}
-  if(type==='sale'&&stock[item]<qty){showAlert('Not enough stock! Only '+stock[item]+' bags of '+item+' available.','warn');return;}
-  const amount=Math.round(qty*rate);
-  if(type==='purchase'){
-    const os=stock[item],oa=avgBuy[item];
-    stock[item]+=qty;
-    avgBuy[item]=os===0?rate:Math.round((oa*os+rate*qty)/stock[item]);
-  } else {
-    stock[item]-=qty;
-  }
-  txs.push({id:Date.now(),type,date,time:timeStr(),item,qty,rate,amount,party,notes});
-  save();
-  showAlert((type==='purchase'?'Purchase':'Sale')+' saved: '+item+' '+qty+' bags @ Rs.'+F(rate),'ok');
-  ['e-qty','e-rate','e-party','e-notes'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('e-total').textContent='Rs. 0';
-}
-
-function showAlert(msg,type){
-  const el=document.getElementById('pg-alert');
-  el.className='alert alert-'+type;el.textContent=msg;el.style.display='block';
-  setTimeout(()=>el.style.display='none',3500);
-}
-
-function itemStats(list){
-  let pb=0,pa=0,sb=0,sa=0;
-  list.forEach(t=>{
-    if(t.type==='purchase'){pb+=t.qty;pa+=t.amount;}
-    else if(t.type==='sale'){sb+=t.qty;sa+=t.amount;}
-  });
-  return{pb,pa,sb,sa,profit:sa-pa};
-}
-
-function renderDashboard(){
-  const today=todayStr();
-  const month=today.slice(0,7);
-  const todayTxs=txs.filter(t=>t.date===today);
-  const monthTxs=txs.filter(t=>t.date.startsWith(month));
-  const todayStats=itemStats(todayTxs);
-  const monthStats=itemStats(monthTxs);
-  const totalStock=ITEMS.reduce((a,i)=>a+stock[i],0);
-  const stockVal=ITEMS.reduce((a,i)=>a+stock[i]*avgBuy[i],0);
-  document.getElementById('db-metrics').innerHTML=`
-    <div class="metric"><div class="mlabel">Total stock</div><div class="mval">${F(totalStock)}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div></div>
-    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(stockVal)}</div></div>
-    <div class="metric"><div class="mlabel">Today's sale</div><div class="mval" style="font-size:14px">Rs.${F(todayStats.sa)}</div><div class="msub">${todayStats.sb} bags sold</div></div>
-    <div class="metric"><div class="mlabel">This month profit</div><div class="mval" style="font-size:14px;color:${monthStats.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(monthStats.profit)}</div></div>`;
-  const todayRows=todayTxs.slice().reverse().map(t=>`<tr><td>${t.item.split(' ')[0]}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Buy':'Sell'}</span></td><td>${F(t.qty)}</td><td>Rs.${F(t.amount)}</td></tr>`).join('');
-  document.getElementById('db-today').innerHTML=todayRows||'<tr><td colspan="4" class="empty">No entries today.</td></tr>';
-  const stRows=ITEMS.map(i=>`<tr><td>${i}</td><td>${F(stock[i])}</td><td>${statusBadge(stock[i])}</td></tr>`).join('');
-  document.getElementById('db-stock').innerHTML=stRows;
-  let mRows='',mPB=0,mPA=0,mSB=0,mSA=0;
-  ITEMS.forEach(i=>{
-    const s=itemStats(monthTxs.filter(t=>t.item===i));
-    mPB+=s.pb;mPA+=s.pa;mSB+=s.sb;mSA+=s.sa;
-    mRows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${profitSpan(s.profit)}</td><td>${F(stock[i])}</td></tr>`;
-  });
-  document.getElementById('db-month').innerHTML=mRows;
-  document.getElementById('db-month-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA-mPA)}</td><td></td></tr>`;
-}
-
-function renderDaily(){
-  const date=document.getElementById('dr-date').value;
-  if(!date)return;
-  const list=txs.filter(t=>t.date===date);
-  const st=itemStats(list);
-  document.getElementById('dr-metrics').innerHTML=`
-    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>
-    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
-  let rows='',fPB=0,fPA=0,fSB=0,fSA=0;
-  ITEMS.forEach(i=>{
-    const s=itemStats(list.filter(t=>t.item===i));
-    if(s.pb===0&&s.sb===0)return;
-    fPB+=s.pb;fPA+=s.pa;fSB+=s.sb;fSA+=s.sa;
-    const abr=s.pb>0?Math.round(s.pa/s.pb):0;
-    const asr=s.sb>0?Math.round(s.sa/s.sb):0;
-    rows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb>0?'Rs.'+F(abr):'-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb>0?'Rs.'+F(asr):'-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
-  });
-  document.getElementById('dr-summary').innerHTML=rows||'<tr><td colspan="8" class="empty">No activity on this date.</td></tr>';
-  if(rows)document.getElementById('dr-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA-fPA)}</td></tr>`;
-  else document.getElementById('dr-foot').innerHTML='';
-  const eRows=list.slice().reverse().map(t=>`
-    <tr><td>${t.time||''}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
-    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party||'-'}</td><td>${t.notes||'-'}</td>
-    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
-  document.getElementById('dr-entries').innerHTML=eRows||'<tr><td colspan="9" class="empty">No entries.</td></tr>';
-}
-
-function renderMonthly(){
-  const month=document.getElementById('mr-month').value;
-  if(!month)return;
-  const list=txs.filter(t=>t.date.startsWith(month));
-  const st=itemStats(list);
-  document.getElementById('mr-metrics').innerHTML=`
-    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>
-    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
-  let rows='',fPB=0,fPA=0,fSB=0,fSA=0;
-  ITEMS.forEach(i=>{
-    const s=itemStats(list.filter(t=>t.item===i));
-    fPB+=s.pb;fPA+=s.pa;fSB+=s.sb;fSA+=s.sa;
-    const abr=s.pb>0?Math.round(s.pa/s.pb):0;
-    const asr=s.sb>0?Math.round(s.sa/s.sb):0;
-    rows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb>0?'Rs.'+F(abr):'-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb>0?'Rs.'+F(asr):'-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
-  });
-  document.getElementById('mr-summary').innerHTML=rows;
-  document.getElementById('mr-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA-fPA)}</td></tr>`;
-  const days=[...new Set(list.map(t=>t.date))].sort().reverse();
-  const dRows=days.map(d=>{
-    const dl=list.filter(t=>t.date===d);
-    const ds=itemStats(dl);
-    return`<tr><td>${d}</td><td>Rs.${F(ds.pa)}</td><td>Rs.${F(ds.sa)}</td><td>${profitSpan(ds.profit)}</td><td>${dl.length}</td></tr>`;
-  }).join('');
-  document.getElementById('mr-daily').innerHTML=dRows||'<tr><td colspan="5" class="empty">No data for this month.</td></tr>';
-}
-
-let selItem=ITEMS[0];
-function renderItems(){
-  const btns=document.getElementById('item-btns');
-  btns.innerHTML=ITEMS.map(i=>`<button class="isel-btn${i===selItem?' active':''}" onclick="selectItem('${i}')">${i}</button>`).join('');
-  renderItemDetail();
-}
-function selectItem(i){selItem=i;renderItems();}
-function renderItemDetail(){
-  const list=txs.filter(t=>t.item===selItem);
-  const st=itemStats(list);
-  const stockVal=stock[selItem]*avgBuy[selItem];
-  document.getElementById('iw-metrics').innerHTML=`
-    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
-    <div class="metric"><div class="mlabel">Stock left</div><div class="mval">${F(stock[selItem])}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div><div class="msub">Value Rs.${F(stockVal)}</div></div>
-    <div class="metric"><div class="mlabel">All-time profit</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>`;
-  document.getElementById('iw-alltime').innerHTML=`
-    <tr><td>All time</td><td>${F(st.pb)}</td><td>Rs.${F(st.pa)}</td><td>${F(st.sb)}</td><td>Rs.${F(st.sa)}</td><td>${F(stock[selItem])}</td><td>${profitSpan(st.profit)}</td></tr>`;
-  const months=[...new Set(list.map(t=>t.date.slice(0,7)))].sort().reverse();
-  let mRows='',mPB=0,mPA=0,mSB=0,mSA=0;
-  months.forEach(m=>{
-    const ml=list.filter(t=>t.date.startsWith(m));
-    const ms=itemStats(ml);
-    mPB+=ms.pb;mPA+=ms.pa;mSB+=ms.sb;mSA+=ms.sa;
-    mRows+=`<tr><td>${m}</td><td>${F(ms.pb)}</td><td>Rs.${F(ms.pa)}</td><td>${F(ms.sb)}</td><td>Rs.${F(ms.sa)}</td><td>${profitSpan(ms.profit)}</td></tr>`;
-  });
-  document.getElementById('iw-monthly').innerHTML=mRows||'<tr><td colspan="6" class="empty">No data yet.</td></tr>';
-  if(mRows)document.getElementById('iw-monthly-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA-mPA)}</td></tr>`;
-  const txRows=list.slice().reverse().map(t=>`
-    <tr><td>${t.date}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
-    <td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party||'-'}</td><td>${t.notes||'-'}</td></tr>`).join('');
-  document.getElementById('iw-txs').innerHTML=txRows||'<tr><td colspan="7" class="empty">No transactions yet.</td></tr>';
-}
-
-function renderHistory(){
-  const fi=document.getElementById('h-item').value;
-  const ft=document.getElementById('h-type').value;
-  const fd=document.getElementById('h-from').value;
-  let list=[...txs].reverse();
-  if(fi)list=list.filter(t=>t.item===fi);
-  if(ft)list=list.filter(t=>t.type===ft);
-  if(fd)list=list.filter(t=>t.date>=fd);
-  document.getElementById('h-empty').style.display=list.length?'none':'block';
-  document.getElementById('h-table').innerHTML=list.map(t=>`
-    <tr><td>${t.date}</td><td>${t.time||''}</td>
-    <td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
-    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td>
-    <td>${t.party||'-'}</td><td>${t.notes||'-'}</td>
-    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
-}
-function clearH(){
-  ['h-item','h-type'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('h-from').value='';
-  renderHistory();
-}
-
-function renderStock(){
-  let rows='',totVal=0;
-  ITEMS.forEach(i=>{
-    const val=stock[i]*avgBuy[i];totVal+=val;
-    rows+=`<tr><td>${i}</td><td>${F(stock[i])}</td><td>${avgBuy[i]>0?'Rs.'+F(avgBuy[i]):'-'}</td><td>Rs.${F(val)}</td><td>${statusBadge(stock[i])}</td></tr>`;
-  });
-  document.getElementById('st-table').innerHTML=rows;
-  document.getElementById('st-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td></td><td></td><td>Rs.${F(totVal)}</td><td></td></tr>`;
-  const totalBags=ITEMS.reduce((a,i)=>a+stock[i],0);
-  const lowItems=ITEMS.filter(i=>stock[i]<20&&stock[i]>0).length;
-  const outItems=ITEMS.filter(i=>stock[i]<=0).length;
-  document.getElementById('st-metrics').innerHTML=`
-    <div class="metric"><div class="mlabel">Total bags</div><div class="mval">${F(totalBags)}</div></div>
-    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(totVal)}</div></div>
-    <div class="metric"><div class="mlabel">Low stock items</div><div class="mval" style="color:${lowItems>0?'#e0a840':'#5ec47a'}">${lowItems}</div></div>
-    <div class="metric"><div class="mlabel">Out of stock</div><div class="mval" style="color:${outItems>0?'#e07070':'#5ec47a'}">${outItems}</div></div>`;
-}
-
-function doAdj(){
-  const item=document.getElementById('adj-item').value;
-  const nq=parseInt(document.getElementById('adj-qty').value);
-  const reason=document.getElementById('adj-reason').value.trim();
-  if(isNaN(nq)||nq<0){alert('Enter a valid quantity');return;}
-  const diff=nq-stock[item];
-  stock[item]=nq;
-  txs.push({id:Date.now(),type:'adjust',date:todayStr(),time:timeStr(),item,qty:Math.abs(diff),rate:0,amount:0,party:'',notes:reason||'Physical count adjustment'});
-  save();renderStock();
-  showAlert('Stock updated: '+item+' is now '+nq+' bags.','ok');
-  document.getElementById('adj-qty').value='';
-}
-
-function delTx(id){
-  if(!confirm('Delete this entry? Note: stock will NOT be auto-reversed. Adjust manually if needed.'))return;
-  txs=txs.filter(t=>t.id!==id);save();
-  renderHistory();renderDaily();
-}
-
-function populateSelects(){
-  ['e-item','adj-item'].forEach(id=>{
-    document.getElementById(id).innerHTML=ITEMS.map(i=>`<option value="${i}">${i}</option>`).join('');
-  });
-  document.getElementById('h-item').innerHTML='<option value="">All items</option>'+ITEMS.map(i=>`<option value="${i}">${i}</option>`).join('');
-}
-
-const now=new Date();
-document.getElementById('hdr-date').textContent=now.toLocaleDateString('en-PK',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
-document.getElementById('e-date').value=todayStr();
-document.getElementById('dr-date').value=todayStr();
-document.getElementById('mr-month').value=thisMonth();
-
-load();populateSelects();renderDashboard();
-<script type="module">
-  // 1. Firebase Imports
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-  // TODO: Replace with YOUR actual Firebase config from the console
- const firebaseConfig = {
+// ── Firebase init ──────────────────────────────────────────────────────────
+const firebaseConfig = {
   apiKey: "AIzaSyCXEKvjK8PCL4MwfaIPPXdWYDvZQ1-Iq_U",
   authDomain: "whole-sale-dealer-app.firebaseapp.com",
   databaseURL: "https://whole-sale-dealer-app-default-rtdb.firebaseio.com",
@@ -582,192 +323,389 @@ load();populateSelects();renderDashboard();
   appId: "1:897165861174:web:d0bb289dc0c842df069397",
   measurementId: "G-JG05KC2QYL"
 };
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app);
-  const dbRef = ref(db, 'inventory_data');
+// ── App state ──────────────────────────────────────────────────────────────
+const ITEMS = ['Sehla Rice','Short Steam Rice','Royal Steam Rice','NR Steam Rice','Wheat (Gehun)','Channe','Bajra','Masala Jaat'];
+let txs = [], stock = {}, avgBuy = {};
+let isSaving = false;
 
-  // 2. Global Variables
-  const ITEMS = ['Sehla Rice','Short Steam Rice','Royal Steam Rice','NR Steam Rice','Wheat (Gehun)','Channe','Bajra','Masala Jaat'];
-  let txs = [], stock = {}, avgBuy = {};
-  let selItem = ITEMS[0];
+// ── Sync status UI ─────────────────────────────────────────────────────────
+function setSyncStatus(state, label) {
+  const dot = document.getElementById('sync-dot');
+  const lbl = document.getElementById('sync-label');
+  dot.className = 'sync-dot ' + state;
+  lbl.textContent = label;
+}
 
-  // 3. Formatting Helpers
-  const F = n => Math.round(n).toLocaleString('en-PK');
-  const todayStr = () => new Date().toISOString().split('T')[0];
-  const thisMonth = () => new Date().toISOString().slice(0,7);
-  const timeStr = () => new Date().toLocaleTimeString('en-PK', {hour:'2-digit', minute:'2-digit'});
-  const statusBadge = q => {
-    if(q<=0) return '<span class="badge b-red">Out</span>';
-    if(q<20) return '<span class="badge b-amber">Low</span>';
-    return '<span class="badge b-green">Good</span>';
-  };
-  const profitSpan = p => `<span class="${p>=0?'profit-pos':'profit-neg'}">Rs.${F(p)}</span>`;
-
-  // 4. Navigation & UI Logic
-  function nav(id, el) {
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    
-    const targetPage = document.getElementById('page-' + id);
-    if (targetPage) targetPage.classList.add('active');
-    if (el) el.classList.add('active');
-
-    // Trigger specific renders
-    if(id==='dashboard') renderDashboard();
-    if(id==='daily') renderDaily();
-    if(id==='monthly') renderMonthly();
-    if(id==='items') renderItems();
-    if(id==='history') renderHistory();
-    if(id==='stock') renderStock();
-  }
-
-  // 5. Data Sync Functions
-  function startSync() {
-    onValue(dbRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        txs = data.txs || [];
-        stock = data.stock || {};
-        avgBuy = data.avgBuy || {};
-      }
-      ITEMS.forEach(i => {
-        if (!stock[i]) stock[i] = 0;
-        if (!avgBuy[i]) avgBuy[i] = 0;
-      });
-      renderDashboard(); // Initial render
-    });
-  }
-
-  function saveToCloud() {
-    set(dbRef, { txs, stock, avgBuy });
-  }
-
-  // 6. Core Logic Functions
-  function itemStats(list) {
-    let pb=0, pa=0, sb=0, sa=0;
-    list.forEach(t => {
-      if(t.type==='purchase'){ pb+=t.qty; pa+=t.amount; }
-      else if(t.type==='sale'){ sb+=t.qty; sa+=t.amount; }
-    });
-    return { pb, pa, sb, sa, profit: sa-pa };
-  }
-
-  function renderDashboard() {
-    const today = todayStr();
-    const month = today.slice(0,7);
-    const todayTxs = txs.filter(t => t.date === today);
-    const monthTxs = txs.filter(t => t.date.startsWith(month));
-    const todayStats = itemStats(todayTxs);
-    const monthStats = itemStats(monthTxs);
-    const totalStock = ITEMS.reduce((a,i) => a + stock[i], 0);
-    const stockVal = ITEMS.reduce((a,i) => a + stock[i] * avgBuy[i], 0);
-
-    const metricsEl = document.getElementById('db-metrics');
-    if (metricsEl) {
-      metricsEl.innerHTML = `
-        <div class="metric"><div class="mlabel">Total stock</div><div class="mval">${F(totalStock)}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div></div>
-        <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(stockVal)}</div></div>
-        <div class="metric"><div class="mlabel">Today's sale</div><div class="mval" style="font-size:14px">Rs.${F(todayStats.sa)}</div><div class="msub">${todayStats.sb} bags sold</div></div>
-        <div class="metric"><div class="mlabel">This month profit</div><div class="mval" style="font-size:14px;color:${monthStats.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(monthStats.profit)}</div></div>`;
+// ── Firebase load (one-time on start) ─────────────────────────────────────
+function loadFromFirebase() {
+  const ref = db.ref('inventory');
+  ref.once('value').then(snap => {
+    const data = snap.val();
+    if (data) {
+      txs     = data.txs     ? Object.values(data.txs)   : [];
+      stock   = data.stock   || {};
+      avgBuy  = data.avgBuy  || {};
     }
+    ITEMS.forEach(i => { if (!stock[i]) stock[i] = 0; if (!avgBuy[i]) avgBuy[i] = 0; });
 
-    const todayRows = todayTxs.slice().reverse().map(t => `<tr><td>${t.item.split(' ')[0]}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Buy':'Sell'}</span></td><td>${F(t.qty)}</td><td>Rs.${F(t.amount)}</td></tr>`).join('');
-    document.getElementById('db-today').innerHTML = todayRows || '<tr><td colspan="4" class="empty">No entries today.</td></tr>';
-    
-    const stRows = ITEMS.map(i => `<tr><td>${i}</td><td>${F(stock[i])}</td><td>${statusBadge(stock[i])}</td></tr>`).join('');
-    document.getElementById('db-stock').innerHTML = stRows;
+    // Hide loading overlay, show app
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('main-app').style.display = 'block';
 
-    let mRows='', mPB=0, mPA=0, mSB=0, mSA=0;
-    ITEMS.forEach(i => {
-      const s = itemStats(monthTxs.filter(t => t.item === i));
-      mPB+=s.pb; mPA+=s.pa; mSB+=s.sb; mSA+=s.sa;
-      mRows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${profitSpan(s.profit)}</td><td>${F(stock[i])}</td></tr>`;
+    setSyncStatus('online', 'Live');
+    populateSelects();
+    renderDashboard();
+
+    // Listen for real-time updates from other devices
+    listenRealtime();
+  }).catch(err => {
+    setSyncStatus('error', 'Error');
+    document.getElementById('loading-overlay').innerHTML =
+      '<div style="color:#e07070;font-size:13px;text-align:center;padding:20px">⚠️ Cannot connect to database.<br><small style="color:#8b90a0">Check your internet connection and Firebase rules.</small></div>';
+  });
+}
+
+// ── Real-time listener (updates UI when father/you makes a change) ─────────
+let isLocalUpdate = false;
+function listenRealtime() {
+  db.ref('inventory').on('value', snap => {
+    if (isLocalUpdate) return; // skip echo of our own save
+    const data = snap.val();
+    if (!data) return;
+    txs    = data.txs    ? Object.values(data.txs) : [];
+    stock  = data.stock  || {};
+    avgBuy = data.avgBuy || {};
+    ITEMS.forEach(i => { if (!stock[i]) stock[i] = 0; if (!avgBuy[i]) avgBuy[i] = 0; });
+    // Refresh whichever page is active
+    refreshActivePage();
+    setSyncStatus('online', 'Live');
+  });
+}
+
+function refreshActivePage() {
+  const active = document.querySelector('.page.active');
+  if (!active) return;
+  const id = active.id.replace('page-', '');
+  if (id === 'dashboard') renderDashboard();
+  else if (id === 'daily') renderDaily();
+  else if (id === 'monthly') renderMonthly();
+  else if (id === 'items') renderItems();
+  else if (id === 'history') renderHistory();
+  else if (id === 'stock') renderStock();
+}
+
+// ── Save to Firebase ───────────────────────────────────────────────────────
+function save() {
+  setSyncStatus('saving', 'Saving…');
+  isLocalUpdate = true;
+
+  // Convert txs array to object keyed by id (Firebase prefers objects)
+  const txsObj = {};
+  txs.forEach(t => { txsObj[t.id] = t; });
+
+  db.ref('inventory').set({ txs: txsObj, stock, avgBuy })
+    .then(() => {
+      setSyncStatus('online', 'Saved ✓');
+      setTimeout(() => setSyncStatus('online', 'Live'), 2000);
+      isLocalUpdate = false;
+    })
+    .catch(() => {
+      setSyncStatus('error', 'Save failed!');
+      isLocalUpdate = false;
     });
-    document.getElementById('db-month').innerHTML = mRows;
-    document.getElementById('db-month-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA-mPA)}</td><td></td></tr>`;
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const F = n => Math.round(n).toLocaleString('en-PK');
+function todayStr()  { return new Date().toISOString().split('T')[0]; }
+function thisMonth() { return new Date().toISOString().slice(0, 7); }
+function timeStr()   { return new Date().toLocaleTimeString('en-PK', {hour:'2-digit', minute:'2-digit'}); }
+function statusBadge(q) {
+  if (q <= 0) return '<span class="badge b-red">Out</span>';
+  if (q < 20) return '<span class="badge b-amber">Low</span>';
+  return '<span class="badge b-green">Good</span>';
+}
+function profitSpan(p) {
+  return `<span class="${p >= 0 ? 'profit-pos' : 'profit-neg'}">Rs.${F(p)}</span>`;
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function nav(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'dashboard') renderDashboard();
+  if (id === 'daily')     renderDaily();
+  if (id === 'monthly')   renderMonthly();
+  if (id === 'items')     renderItems();
+  if (id === 'history')   renderHistory();
+  if (id === 'stock')     renderStock();
+}
+
+// ── Entry form ─────────────────────────────────────────────────────────────
+function calcTotal() {
+  const q = parseFloat(document.getElementById('e-qty').value) || 0;
+  const r = parseFloat(document.getElementById('e-rate').value) || 0;
+  document.getElementById('e-total').textContent = 'Rs. ' + F(q * r);
+}
+
+function saveEntry() {
+  const type  = document.getElementById('e-type').value;
+  const date  = document.getElementById('e-date').value;
+  const item  = document.getElementById('e-item').value;
+  const qty   = parseInt(document.getElementById('e-qty').value);
+  const rate  = parseFloat(document.getElementById('e-rate').value);
+  const party = document.getElementById('e-party').value.trim();
+  const notes = document.getElementById('e-notes').value.trim();
+  if (!date || !qty || qty < 1 || !rate || rate < 0) {
+    showAlert('Fill in date, quantity and rate.', 'warn'); return;
   }
-
-  // Define other render functions here... (Daily, Monthly, Items, History, Stock)
-  // [Ported from your original file]
-
-  function showAlert(msg, type) {
-    const el = document.getElementById('pg-alert');
-    el.className = 'alert alert-' + type; el.textContent = msg; el.style.display = 'block';
-    setTimeout(() => el.style.display = 'none', 3500);
+  if (type === 'sale' && stock[item] < qty) {
+    showAlert('Not enough stock! Only ' + stock[item] + ' bags of ' + item + ' available.', 'warn'); return;
   }
-
-  function populateSelects() {
-    ['e-item', 'adj-item'].forEach(id => {
-      const el = document.getElementById(id);
-      if(el) el.innerHTML = ITEMS.map(i => `<option value="${i}">${i}</option>`).join('');
-    });
-    const hItem = document.getElementById('h-item');
-    if(hItem) hItem.innerHTML = '<option value="">All items</option>' + ITEMS.map(i => `<option value="${i}">${i}</option>`).join('');
+  const amount = Math.round(qty * rate);
+  if (type === 'purchase') {
+    const os = stock[item], oa = avgBuy[item];
+    stock[item] += qty;
+    avgBuy[item] = os === 0 ? rate : Math.round((oa * os + rate * qty) / stock[item]);
+  } else {
+    stock[item] -= qty;
   }
+  txs.push({ id: Date.now(), type, date, time: timeStr(), item, qty, rate, amount, party, notes });
+  save();
+  showAlert((type === 'purchase' ? 'Purchase' : 'Sale') + ' saved: ' + item + ' ' + qty + ' bags @ Rs.' + F(rate), 'ok');
+  ['e-qty', 'e-rate', 'e-party', 'e-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('e-total').textContent = 'Rs. 0';
+}
 
-  // 7. THE CRITICAL FIX: MANUALLY EXPOSE TO WINDOW
-  window.nav = nav;
-  window.saveEntry = function() {
-    const type = document.getElementById('e-type').value;
-    const date = document.getElementById('e-date').value;
-    const item = document.getElementById('e-item').value;
-    const qty = parseInt(document.getElementById('e-qty').value);
-    const rate = parseFloat(document.getElementById('e-rate').value);
-    const party = document.getElementById('e-party').value.trim();
-    const notes = document.getElementById('e-notes').value.trim();
+function showAlert(msg, type) {
+  const el = document.getElementById('pg-alert');
+  el.className = 'alert alert-' + type;
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3500);
+}
 
-    if(!date || !qty || qty < 1 || !rate || rate < 0) {
-      showAlert('Fill in all fields.', 'warn'); return;
-    }
-    if(type === 'sale' && stock[item] < qty) {
-      showAlert('Insufficient stock!', 'warn'); return;
-    }
+// ── Stats helper ───────────────────────────────────────────────────────────
+function itemStats(list) {
+  let pb = 0, pa = 0, sb = 0, sa = 0;
+  list.forEach(t => {
+    if (t.type === 'purchase') { pb += t.qty; pa += t.amount; }
+    else if (t.type === 'sale') { sb += t.qty; sa += t.amount; }
+  });
+  return { pb, pa, sb, sa, profit: sa - pa };
+}
 
-    const amount = Math.round(qty * rate);
-    if(type === 'purchase') {
-      const os = stock[item], oa = avgBuy[item];
-      stock[item] += qty;
-      avgBuy[item] = os === 0 ? rate : Math.round((oa * os + rate * qty) / stock[item]);
-    } else {
-      stock[item] -= qty;
-    }
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const today = todayStr();
+  const month = today.slice(0, 7);
+  const todayTxs  = txs.filter(t => t.date === today);
+  const monthTxs  = txs.filter(t => t.date.startsWith(month));
+  const todayStats = itemStats(todayTxs);
+  const monthStats = itemStats(monthTxs);
+  const totalStock = ITEMS.reduce((a, i) => a + stock[i], 0);
+  const stockVal   = ITEMS.reduce((a, i) => a + stock[i] * avgBuy[i], 0);
+  document.getElementById('db-metrics').innerHTML = `
+    <div class="metric"><div class="mlabel">Total stock</div><div class="mval">${F(totalStock)}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div></div>
+    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(stockVal)}</div></div>
+    <div class="metric"><div class="mlabel">Today's sale</div><div class="mval" style="font-size:14px">Rs.${F(todayStats.sa)}</div><div class="msub">${todayStats.sb} bags sold</div></div>
+    <div class="metric"><div class="mlabel">This month profit</div><div class="mval" style="font-size:14px;color:${monthStats.profit >= 0 ? '#5ec47a' : '#e07070'}">Rs.${F(monthStats.profit)}</div></div>`;
+  const todayRows = todayTxs.slice().reverse().map(t =>
+    `<tr><td>${t.item.split(' ')[0]}</td><td><span class="badge ${t.type === 'purchase' ? 'b-green' : 'b-red'}">${t.type === 'purchase' ? 'Buy' : 'Sell'}</span></td><td>${F(t.qty)}</td><td>Rs.${F(t.amount)}</td></tr>`
+  ).join('');
+  document.getElementById('db-today').innerHTML = todayRows || '<tr><td colspan="4" class="empty">No entries today.</td></tr>';
+  const stRows = ITEMS.map(i => `<tr><td>${i}</td><td>${F(stock[i])}</td><td>${statusBadge(stock[i])}</td></tr>`).join('');
+  document.getElementById('db-stock').innerHTML = stRows;
+  let mRows = '', mPB = 0, mPA = 0, mSB = 0, mSA = 0;
+  ITEMS.forEach(i => {
+    const s = itemStats(monthTxs.filter(t => t.item === i));
+    mPB += s.pb; mPA += s.pa; mSB += s.sb; mSA += s.sa;
+    mRows += `<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${profitSpan(s.profit)}</td><td>${F(stock[i])}</td></tr>`;
+  });
+  document.getElementById('db-month').innerHTML = mRows;
+  document.getElementById('db-month-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA - mPA)}</td><td></td></tr>`;
+}
 
-    txs.push({id: Date.now(), type, date, time: timeStr(), item, qty, rate, amount, party, notes});
-    saveToCloud();
-    showAlert('Saved to Cloud!', 'ok');
-    ['e-qty', 'e-rate', 'e-party', 'e-notes'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('e-total').textContent = 'Rs. 0';
-  };
+// ── Daily report ───────────────────────────────────────────────────────────
+function renderDaily() {
+  const date = document.getElementById('dr-date').value;
+  if (!date) return;
+  const list = txs.filter(t => t.date === date);
+  const st = itemStats(list);
+  document.getElementById('dr-metrics').innerHTML = `
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit >= 0 ? '#5ec47a' : '#e07070'}">Rs.${F(st.profit)}</div></div>
+    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
+  let rows = '', fPB = 0, fPA = 0, fSB = 0, fSA = 0;
+  ITEMS.forEach(i => {
+    const s = itemStats(list.filter(t => t.item === i));
+    if (s.pb === 0 && s.sb === 0) return;
+    fPB += s.pb; fPA += s.pa; fSB += s.sb; fSA += s.sa;
+    const abr = s.pb > 0 ? Math.round(s.pa / s.pb) : 0;
+    const asr = s.sb > 0 ? Math.round(s.sa / s.sb) : 0;
+    rows += `<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb > 0 ? 'Rs.' + F(abr) : '-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb > 0 ? 'Rs.' + F(asr) : '-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
+  });
+  document.getElementById('dr-summary').innerHTML = rows || '<tr><td colspan="8" class="empty">No activity on this date.</td></tr>';
+  if (rows) document.getElementById('dr-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA - fPA)}</td></tr>`;
+  else document.getElementById('dr-foot').innerHTML = '';
+  const eRows = list.slice().reverse().map(t => `
+    <tr><td>${t.time || ''}</td><td><span class="badge ${t.type === 'purchase' ? 'b-green' : 'b-red'}">${t.type === 'purchase' ? 'Purchase' : 'Sale'}</span></td>
+    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party || '-'}</td><td>${t.notes || '-'}</td>
+    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
+  document.getElementById('dr-entries').innerHTML = eRows || '<tr><td colspan="9" class="empty">No entries.</td></tr>';
+}
 
-  window.calcTotal = () => {
-    const q = parseFloat(document.getElementById('e-qty').value) || 0;
-    const r = parseFloat(document.getElementById('e-rate').value) || 0;
-    document.getElementById('e-total').textContent = 'Rs. ' + F(q * r);
-  };
+// ── Monthly report ─────────────────────────────────────────────────────────
+function renderMonthly() {
+  const month = document.getElementById('mr-month').value;
+  if (!month) return;
+  const list = txs.filter(t => t.date.startsWith(month));
+  const st = itemStats(list);
+  document.getElementById('mr-metrics').innerHTML = `
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit >= 0 ? '#5ec47a' : '#e07070'}">Rs.${F(st.profit)}</div></div>
+    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
+  let rows = '', fPB = 0, fPA = 0, fSB = 0, fSA = 0;
+  ITEMS.forEach(i => {
+    const s = itemStats(list.filter(t => t.item === i));
+    fPB += s.pb; fPA += s.pa; fSB += s.sb; fSA += s.sa;
+    const abr = s.pb > 0 ? Math.round(s.pa / s.pb) : 0;
+    const asr = s.sb > 0 ? Math.round(s.sa / s.sb) : 0;
+    rows += `<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb > 0 ? 'Rs.' + F(abr) : '-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb > 0 ? 'Rs.' + F(asr) : '-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
+  });
+  document.getElementById('mr-summary').innerHTML = rows;
+  document.getElementById('mr-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA - fPA)}</td></tr>`;
+  const days = [...new Set(list.map(t => t.date))].sort().reverse();
+  const dRows = days.map(d => {
+    const dl = list.filter(t => t.date === d);
+    const ds = itemStats(dl);
+    return `<tr><td>${d}</td><td>Rs.${F(ds.pa)}</td><td>Rs.${F(ds.sa)}</td><td>${profitSpan(ds.profit)}</td><td>${dl.length}</td></tr>`;
+  }).join('');
+  document.getElementById('mr-daily').innerHTML = dRows || '<tr><td colspan="5" class="empty">No data for this month.</td></tr>';
+}
 
-  window.renderDashboard = renderDashboard;
-  window.renderDaily = () => { /* Add logic */ };
-  window.renderMonthly = () => { /* Add logic */ };
-  window.renderItems = () => { /* Add logic */ };
-  window.renderHistory = () => { /* Add logic */ };
-  window.renderStock = () => { /* Add logic */ };
-  window.selectItem = (i) => { selItem = i; window.renderItems(); };
-  window.clearH = () => { /* Add logic */ };
-  window.doAdj = () => { /* Add logic */ };
-  window.delTx = (id) => { /* Add logic */ };
+// ── Item-wise ──────────────────────────────────────────────────────────────
+let selItem = ITEMS[0];
+function renderItems() {
+  const btns = document.getElementById('item-btns');
+  btns.innerHTML = ITEMS.map(i =>
+    `<button class="isel-btn${i === selItem ? ' active' : ''}" onclick="selectItem('${i}')">${i}</button>`
+  ).join('');
+  renderItemDetail();
+}
+function selectItem(i) { selItem = i; renderItems(); }
+function renderItemDetail() {
+  const list = txs.filter(t => t.item === selItem);
+  const st = itemStats(list);
+  const stockVal = stock[selItem] * avgBuy[selItem];
+  document.getElementById('iw-metrics').innerHTML = `
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Stock left</div><div class="mval">${F(stock[selItem])}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div><div class="msub">Value Rs.${F(stockVal)}</div></div>
+    <div class="metric"><div class="mlabel">All-time profit</div><div class="mval" style="font-size:14px;color:${st.profit >= 0 ? '#5ec47a' : '#e07070'}">Rs.${F(st.profit)}</div></div>`;
+  document.getElementById('iw-alltime').innerHTML = `
+    <tr><td>All time</td><td>${F(st.pb)}</td><td>Rs.${F(st.pa)}</td><td>${F(st.sb)}</td><td>Rs.${F(st.sa)}</td><td>${F(stock[selItem])}</td><td>${profitSpan(st.profit)}</td></tr>`;
+  const months = [...new Set(list.map(t => t.date.slice(0, 7)))].sort().reverse();
+  let mRows = '', mPB = 0, mPA = 0, mSB = 0, mSA = 0;
+  months.forEach(m => {
+    const ml = list.filter(t => t.date.startsWith(m));
+    const ms = itemStats(ml);
+    mPB += ms.pb; mPA += ms.pa; mSB += ms.sb; mSA += ms.sa;
+    mRows += `<tr><td>${m}</td><td>${F(ms.pb)}</td><td>Rs.${F(ms.pa)}</td><td>${F(ms.sb)}</td><td>Rs.${F(ms.sa)}</td><td>${profitSpan(ms.profit)}</td></tr>`;
+  });
+  document.getElementById('iw-monthly').innerHTML = mRows || '<tr><td colspan="6" class="empty">No data yet.</td></tr>';
+  if (mRows) document.getElementById('iw-monthly-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA - mPA)}</td></tr>`;
+  const txRows = list.slice().reverse().map(t => `
+    <tr><td>${t.date}</td><td><span class="badge ${t.type === 'purchase' ? 'b-green' : 'b-red'}">${t.type === 'purchase' ? 'Purchase' : 'Sale'}</span></td>
+    <td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party || '-'}</td><td>${t.notes || '-'}</td></tr>`).join('');
+  document.getElementById('iw-txs').innerHTML = txRows || '<tr><td colspan="7" class="empty">No transactions yet.</td></tr>';
+}
 
-  // 8. Initialization
-  const now = new Date();
-  const hdrDateEl = document.getElementById('hdr-date');
-  if(hdrDateEl) hdrDateEl.textContent = now.toLocaleDateString('en-PK', {weekday:'short', day:'numeric', month:'short', year:'numeric'});
-  
-  document.getElementById('e-date').value = todayStr();
-  document.getElementById('dr-date').value = todayStr();
-  document.getElementById('mr-month').value = thisMonth();
+// ── History ────────────────────────────────────────────────────────────────
+function renderHistory() {
+  const fi = document.getElementById('h-item').value;
+  const ft = document.getElementById('h-type').value;
+  const fd = document.getElementById('h-from').value;
+  let list = [...txs].reverse();
+  if (fi) list = list.filter(t => t.item === fi);
+  if (ft) list = list.filter(t => t.type === ft);
+  if (fd) list = list.filter(t => t.date >= fd);
+  document.getElementById('h-empty').style.display = list.length ? 'none' : 'block';
+  document.getElementById('h-table').innerHTML = list.map(t => `
+    <tr><td>${t.date}</td><td>${t.time || ''}</td>
+    <td><span class="badge ${t.type === 'purchase' ? 'b-green' : 'b-red'}">${t.type === 'purchase' ? 'Purchase' : 'Sale'}</span></td>
+    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td>
+    <td>${t.party || '-'}</td><td>${t.notes || '-'}</td>
+    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
+}
+function clearH() {
+  ['h-item', 'h-type'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('h-from').value = '';
+  renderHistory();
+}
 
-  populateSelects();
-  startSync();
+// ── Stock ──────────────────────────────────────────────────────────────────
+function renderStock() {
+  let rows = '', totVal = 0;
+  ITEMS.forEach(i => {
+    const val = stock[i] * avgBuy[i]; totVal += val;
+    rows += `<tr><td>${i}</td><td>${F(stock[i])}</td><td>${avgBuy[i] > 0 ? 'Rs.' + F(avgBuy[i]) : '-'}</td><td>Rs.${F(val)}</td><td>${statusBadge(stock[i])}</td></tr>`;
+  });
+  document.getElementById('st-table').innerHTML = rows;
+  document.getElementById('st-foot').innerHTML = `<tr class="tfoot-row"><td>Total</td><td></td><td></td><td>Rs.${F(totVal)}</td><td></td></tr>`;
+  const totalBags = ITEMS.reduce((a, i) => a + stock[i], 0);
+  const lowItems  = ITEMS.filter(i => stock[i] < 20 && stock[i] > 0).length;
+  const outItems  = ITEMS.filter(i => stock[i] <= 0).length;
+  document.getElementById('st-metrics').innerHTML = `
+    <div class="metric"><div class="mlabel">Total bags</div><div class="mval">${F(totalBags)}</div></div>
+    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(totVal)}</div></div>
+    <div class="metric"><div class="mlabel">Low stock items</div><div class="mval" style="color:${lowItems > 0 ? '#e0a840' : '#5ec47a'}">${lowItems}</div></div>
+    <div class="metric"><div class="mlabel">Out of stock</div><div class="mval" style="color:${outItems > 0 ? '#e07070' : '#5ec47a'}">${outItems}</div></div>`;
+}
+
+function doAdj() {
+  const item   = document.getElementById('adj-item').value;
+  const nq     = parseInt(document.getElementById('adj-qty').value);
+  const reason = document.getElementById('adj-reason').value.trim();
+  if (isNaN(nq) || nq < 0) { alert('Enter a valid quantity'); return; }
+  const diff = nq - stock[item];
+  stock[item] = nq;
+  txs.push({ id: Date.now(), type: 'adjust', date: todayStr(), time: timeStr(), item, qty: Math.abs(diff), rate: 0, amount: 0, party: '', notes: reason || 'Physical count adjustment' });
+  save(); renderStock();
+  showAlert('Stock updated: ' + item + ' is now ' + nq + ' bags.', 'ok');
+  document.getElementById('adj-qty').value = '';
+}
+
+function delTx(id) {
+  if (!confirm('Delete this entry? Note: stock will NOT be auto-reversed. Adjust manually if needed.')) return;
+  txs = txs.filter(t => t.id !== id);
+  save();
+  renderHistory(); renderDaily();
+}
+
+function populateSelects() {
+  ['e-item', 'adj-item'].forEach(id => {
+    document.getElementById(id).innerHTML = ITEMS.map(i => `<option value="${i}">${i}</option>`).join('');
+  });
+  document.getElementById('h-item').innerHTML = '<option value="">All items</option>' + ITEMS.map(i => `<option value="${i}">${i}</option>`).join('');
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+const now = new Date();
+document.getElementById('hdr-date').textContent = now.toLocaleDateString('en-PK', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+document.getElementById('e-date').value  = todayStr();
+document.getElementById('dr-date').value = todayStr();
+document.getElementById('mr-month').value = thisMonth();
+
+// Start Firebase load
+loadFromFirebase();
 </script>
 </body>
 </html>
