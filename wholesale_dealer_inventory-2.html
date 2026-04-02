@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Whole sale Dealer — Inventory</title>
+<style>
+:root {
+  --bg-primary: #1a1d23;
+  --bg-secondary: #22262f;
+  --bg-card: #262b35;
+  --bg-input: #1e222a;
+  --border: #333844;
+  --border-light: #2e3340;
+  --text-primary: #e8eaf0;
+  --text-secondary: #8b90a0;
+  --accent: #1D9E75;
+  --accent-dark: #0F6E56;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg-primary);color:var(--text-primary);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.app{padding:14px;max-width:980px;margin:0 auto}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:12px;border-bottom:0.5px solid var(--border)}
+.logo{font-size:18px;font-weight:500;color:var(--text-primary)}
+.logo b{color:#1D9E75;font-weight:600}
+.hdr-date{font-size:11px;color:var(--text-secondary);background:var(--bg-secondary);padding:4px 10px;border-radius:var(--radius-md);border:0.5px solid var(--border)}
+.tabs{display:flex;gap:3px;background:var(--bg-secondary);padding:4px;border-radius:var(--radius-md);border:0.5px solid var(--border);margin-bottom:16px;flex-wrap:wrap}
+.tab{flex:1;min-width:80px;padding:7px 8px;border:none;background:transparent;border-radius:var(--radius-sm);font-size:12px;font-weight:400;color:var(--text-secondary);cursor:pointer;transition:all 0.15s;white-space:nowrap}
+.tab.active{background:var(--bg-card);color:var(--text-primary);font-weight:500;border:0.5px solid var(--border)}
+.tab:hover:not(.active){background:var(--bg-card);color:var(--text-primary)}
+.page{display:none}.page.active{display:block}
+.card{background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:14px;margin-bottom:14px}
+.card-title{font-size:13px;font-weight:500;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:#1D9E75;flex-shrink:0}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:14px}
+.metric{background:var(--bg-secondary);border-radius:var(--radius-md);padding:10px 12px;border:0.5px solid var(--border-light)}
+.mlabel{font-size:10px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.mval{font-size:18px;font-weight:500;color:var(--text-primary);line-height:1.2}
+.msub{font-size:10px;color:var(--text-secondary);margin-top:2px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-weight:500;font-size:10px;color:var(--text-secondary);padding:5px 7px;border-bottom:0.5px solid var(--border);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+td{padding:9px 7px;border-bottom:0.5px solid var(--border-light);color:var(--text-primary);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02)}
+.tfoot-row td{font-weight:500;background:var(--bg-secondary);font-size:12px;border-top:0.5px solid var(--border)}
+.badge{display:inline-block;padding:2px 7px;border-radius:var(--radius-sm);font-size:10px;font-weight:500}
+.b-green{background:#1a3320;color:#5ec47a}
+.b-red{background:#3b1a1a;color:#e07070}
+.b-amber{background:#3b2e10;color:#e0a840}
+.b-blue{background:#1a2a3b;color:#6ab0e8}
+.b-gray{background:#2a2d35;color:#8b90a0}
+.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.fg{display:flex;flex-direction:column;gap:4px}
+label{font-size:11px;color:var(--text-secondary);font-weight:500}
+select,input[type=number],input[type=date],input[type=text],input[type=month]{
+  padding:7px 9px;border:0.5px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--bg-input);color:var(--text-primary);font-size:12px;
+  font-family:inherit;width:100%;outline:none;
+}
+select:focus,input:focus{border-color:#1D9E75;box-shadow:0 0 0 2px rgba(29,158,117,0.15)}
+select option{background:var(--bg-secondary);color:var(--text-primary)}
+.btn{padding:8px 14px;border-radius:var(--radius-sm);border:0.5px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.15s;font-family:inherit}
+.btn:hover{background:var(--bg-card);border-color:var(--accent)}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-dark);border-color:var(--accent-dark)}
+.btn-sm{padding:3px 8px;font-size:10px}
+.btn-del{color:#e07070;border-color:#5a2a2a;background:transparent}
+.btn-del:hover{background:#3b1a1a;border-color:#e07070}
+.alert{padding:9px 12px;border-radius:var(--radius-sm);font-size:12px;margin-bottom:12px}
+.alert-ok{background:#1a3320;color:#5ec47a;border:0.5px solid #2d6040}
+.alert-warn{background:#3b2e10;color:#e0a840;border:0.5px solid #6b4f10}
+.empty{text-align:center;padding:20px;color:var(--text-secondary);font-size:12px}
+.profit-pos{color:#5ec47a;font-weight:500}
+.profit-neg{color:#e07070;font-weight:500}
+.subtabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:0.5px solid var(--border);padding-bottom:0}
+.stab{padding:6px 12px;border:none;background:transparent;font-size:12px;color:var(--text-secondary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;font-family:inherit}
+.stab.active{color:#1D9E75;border-bottom-color:#1D9E75;font-weight:500}
+.item-selector{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.isel-btn{padding:5px 10px;border:0.5px solid var(--border);border-radius:var(--radius-sm);font-size:11px;background:var(--bg-secondary);color:var(--text-secondary);cursor:pointer;font-family:inherit;transition:all 0.15s}
+.isel-btn:hover{border-color:var(--accent);color:var(--accent)}
+.isel-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tscroll{overflow-x:auto}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--bg-secondary)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#4a5060}
+@media(max-width:600px){.metrics{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="header">
+  <div class="logo">📦 <b>Whole sale</b> Dealer — Inventory</div>
+  <div class="hdr-date" id="hdr-date"></div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="nav('dashboard',this)">Dashboard</button>
+  <button class="tab" onclick="nav('entry',this)">Add Entry</button>
+  <button class="tab" onclick="nav('daily',this)">Daily Report</button>
+  <button class="tab" onclick="nav('monthly',this)">Monthly Report</button>
+  <button class="tab" onclick="nav('items',this)">Item-wise</button>
+  <button class="tab" onclick="nav('history',this)">All History</button>
+  <button class="tab" onclick="nav('stock',this)">Stock</button>
+</div>
+
+<div id="pg-alert" style="display:none"></div>
+
+<!-- DASHBOARD -->
+<div class="page active" id="page-dashboard">
+  <div class="metrics" id="db-metrics"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Today's entries</div>
+      <table><thead><tr><th>Item</th><th>Type</th><th>Qty</th><th>Amount</th></tr></thead>
+      <tbody id="db-today"></tbody></table>
+    </div>
+    <div class="card">
+      <div class="card-title"><span class="dot"></span>Stock status</div>
+      <table><thead><tr><th>Item</th><th>Bags</th><th>Status</th></tr></thead>
+      <tbody id="db-stock"></tbody></table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>This month — item summary</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Item</th><th>Purchased (bags)</th><th>Buy Amount</th><th>Sold (bags)</th><th>Sale Amount</th><th>Profit</th><th>Stock</th></tr></thead>
+    <tbody id="db-month"></tbody>
+    <tfoot id="db-month-foot"></tfoot></table>
+    </div>
+  </div>
+</div>
+
+<!-- ADD ENTRY -->
+<div class="page" id="page-entry">
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Add purchase / sale</div>
+    <div class="form-grid">
+      <div class="fg"><label>Type</label>
+        <select id="e-type"><option value="purchase">Purchase (Khareed)</option><option value="sale">Sale (Bikri)</option></select>
+      </div>
+      <div class="fg"><label>Date</label><input type="date" id="e-date"></div>
+      <div class="fg"><label>Item</label><select id="e-item"></select></div>
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>Quantity (bags)</label><input type="number" id="e-qty" placeholder="Bags" min="1" oninput="calcTotal()"></div>
+      <div class="fg"><label>Rate per bag (Rs.)</label><input type="number" id="e-rate" placeholder="Rs." min="0" oninput="calcTotal()"></div>
+      <div class="fg"><label>Party name</label><input type="text" id="e-party" placeholder="Customer / Supplier"></div>
+    </div>
+    <div class="form-grid">
+      <div class="fg"><label>Notes</label><input type="text" id="e-notes" placeholder="Optional notes"></div>
+      <div class="fg" style="justify-content:flex-end;padding-top:16px">
+        <div style="font-size:13px;color:var(--text-secondary)">Total: <span id="e-total" style="font-size:17px;font-weight:500;color:var(--text-primary)">Rs. 0</span></div>
+      </div>
+      <div class="fg" style="justify-content:flex-end;padding-top:16px">
+        <button class="btn btn-primary" onclick="saveEntry()">Save Entry</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DAILY REPORT -->
+<div class="page" id="page-daily">
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Select date</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="date" id="dr-date" style="width:180px" onchange="renderDaily()">
+      <button class="btn" onclick="document.getElementById('dr-date').value=todayStr();renderDaily()">Today</button>
+    </div>
+  </div>
+  <div class="metrics" id="dr-metrics"></div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Item-wise summary for selected date</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Item</th><th>Purchased (bags)</th><th>Buy Amt</th><th>Avg Buy Rate</th><th>Sold (bags)</th><th>Sale Amt</th><th>Avg Sale Rate</th><th>Profit</th></tr></thead>
+    <tbody id="dr-summary"></tbody>
+    <tfoot id="dr-foot"></tfoot></table></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>All entries for this date</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Time</th><th>Type</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Party</th><th>Notes</th><th></th></tr></thead>
+    <tbody id="dr-entries"></tbody></table></div>
+  </div>
+</div>
+
+<!-- MONTHLY REPORT -->
+<div class="page" id="page-monthly">
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Select month</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="month" id="mr-month" style="width:180px" onchange="renderMonthly()">
+      <button class="btn" onclick="document.getElementById('mr-month').value=thisMonth();renderMonthly()">This month</button>
+    </div>
+  </div>
+  <div class="metrics" id="mr-metrics"></div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Item-wise summary</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Item</th><th>Purchased (bags)</th><th>Buy Amount</th><th>Avg Buy Rate</th><th>Sold (bags)</th><th>Sale Amount</th><th>Avg Sale Rate</th><th>Profit / Loss</th></tr></thead>
+    <tbody id="mr-summary"></tbody>
+    <tfoot id="mr-foot"></tfoot></table></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Daily breakdown</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Date</th><th>Total Purchase</th><th>Total Sale</th><th>Profit</th><th>Entries</th></tr></thead>
+    <tbody id="mr-daily"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ITEM-WISE -->
+<div class="page" id="page-items">
+  <div class="card-title" style="margin-bottom:10px"><span class="dot"></span>Select item</div>
+  <div class="item-selector" id="item-btns"></div>
+  <div class="metrics" id="iw-metrics"></div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>All-time summary</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Period</th><th>Purchased (bags)</th><th>Buy Amount</th><th>Sold (bags)</th><th>Sale Amount</th><th>Stock Left</th><th>Profit</th></tr></thead>
+    <tbody id="iw-alltime"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Monthly breakdown</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Month</th><th>Purchased (bags)</th><th>Buy Amount</th><th>Sold (bags)</th><th>Sale Amount</th><th>Profit</th></tr></thead>
+    <tbody id="iw-monthly"></tbody>
+    <tfoot id="iw-monthly-foot"></tfoot></table></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>All transactions for this item</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Party</th><th>Notes</th></tr></thead>
+    <tbody id="iw-txs"></tbody></table></div>
+  </div>
+</div>
+
+<!-- HISTORY -->
+<div class="page" id="page-history">
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Filter</div>
+    <div class="form-grid">
+      <div class="fg"><label>Item</label><select id="h-item"><option value="">All items</option></select></div>
+      <div class="fg"><label>Type</label><select id="h-type"><option value="">All</option><option value="purchase">Purchase</option><option value="sale">Sale</option></select></div>
+      <div class="fg"><label>From date</label><input type="date" id="h-from"></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" onclick="renderHistory()">Filter</button>
+      <button class="btn" onclick="clearH()">Clear</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>All transactions</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th>Party</th><th>Notes</th><th></th></tr></thead>
+    <tbody id="h-table"></tbody></table>
+    <div id="h-empty" class="empty" style="display:none">No transactions found.</div>
+    </div>
+  </div>
+</div>
+
+<!-- STOCK -->
+<div class="page" id="page-stock">
+  <div class="metrics" id="st-metrics"></div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Current stock & valuation</div>
+    <div class="tscroll">
+    <table><thead><tr><th>Item</th><th>Stock (bags)</th><th>Avg buy rate</th><th>Stock value</th><th>Status</th></tr></thead>
+    <tbody id="st-table"></tbody>
+    <tfoot id="st-foot"></tfoot></table></div>
+  </div>
+  <div class="card">
+    <div class="card-title"><span class="dot"></span>Adjust stock (physical count)</div>
+    <div class="form-grid">
+      <div class="fg"><label>Item</label><select id="adj-item"></select></div>
+      <div class="fg"><label>Actual bags (new count)</label><input type="number" id="adj-qty" placeholder="Bags" min="0"></div>
+      <div class="fg"><label>Reason</label><input type="text" id="adj-reason" placeholder="e.g. Physical count"></div>
+    </div>
+    <button class="btn btn-primary" onclick="doAdj()">Update Stock</button>
+  </div>
+</div>
+</div>
+
+<script>
+const ITEMS=['Sehla Rice','Short Steam Rice','Royal Steam Rice','NR Steam Rice','Wheat (Gehun)','Channe','Bajra','Masala Jaat'];
+let txs=[],stock={},avgBuy={};
+
+function load(){
+  try{
+    const t=localStorage.getItem('bt_txs2');
+    const s=localStorage.getItem('bt_stock2');
+    const a=localStorage.getItem('bt_avg2');
+    if(t)txs=JSON.parse(t);
+    if(s)stock=JSON.parse(s);
+    if(a)avgBuy=JSON.parse(a);
+  }catch(e){}
+  ITEMS.forEach(i=>{if(!stock[i])stock[i]=0;if(!avgBuy[i])avgBuy[i]=0;});
+}
+function save(){
+  try{
+    localStorage.setItem('bt_txs2',JSON.stringify(txs));
+    localStorage.setItem('bt_stock2',JSON.stringify(stock));
+    localStorage.setItem('bt_avg2',JSON.stringify(avgBuy));
+  }catch(e){}
+}
+
+const F=n=>Math.round(n).toLocaleString('en-PK');
+function todayStr(){return new Date().toISOString().split('T')[0];}
+function thisMonth(){return new Date().toISOString().slice(0,7);}
+function timeStr(){return new Date().toLocaleTimeString('en-PK',{hour:'2-digit',minute:'2-digit'});}
+function statusBadge(q){if(q<=0)return'<span class="badge b-red">Out</span>';if(q<20)return'<span class="badge b-amber">Low</span>';return'<span class="badge b-green">Good</span>';}
+function profitSpan(p){return`<span class="${p>=0?'profit-pos':'profit-neg'}">Rs.${F(p)}</span>`;}
+
+function nav(id,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  el.classList.add('active');
+  if(id==='dashboard')renderDashboard();
+  if(id==='daily')renderDaily();
+  if(id==='monthly')renderMonthly();
+  if(id==='items')renderItems();
+  if(id==='history')renderHistory();
+  if(id==='stock')renderStock();
+}
+
+function calcTotal(){
+  const q=parseFloat(document.getElementById('e-qty').value)||0;
+  const r=parseFloat(document.getElementById('e-rate').value)||0;
+  document.getElementById('e-total').textContent='Rs. '+F(q*r);
+}
+
+function saveEntry(){
+  const type=document.getElementById('e-type').value;
+  const date=document.getElementById('e-date').value;
+  const item=document.getElementById('e-item').value;
+  const qty=parseInt(document.getElementById('e-qty').value);
+  const rate=parseFloat(document.getElementById('e-rate').value);
+  const party=document.getElementById('e-party').value.trim();
+  const notes=document.getElementById('e-notes').value.trim();
+  if(!date||!qty||qty<1||!rate||rate<0){showAlert('Fill in date, quantity and rate.','warn');return;}
+  if(type==='sale'&&stock[item]<qty){showAlert('Not enough stock! Only '+stock[item]+' bags of '+item+' available.','warn');return;}
+  const amount=Math.round(qty*rate);
+  if(type==='purchase'){
+    const os=stock[item],oa=avgBuy[item];
+    stock[item]+=qty;
+    avgBuy[item]=os===0?rate:Math.round((oa*os+rate*qty)/stock[item]);
+  } else {
+    stock[item]-=qty;
+  }
+  txs.push({id:Date.now(),type,date,time:timeStr(),item,qty,rate,amount,party,notes});
+  save();
+  showAlert((type==='purchase'?'Purchase':'Sale')+' saved: '+item+' '+qty+' bags @ Rs.'+F(rate),'ok');
+  ['e-qty','e-rate','e-party','e-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('e-total').textContent='Rs. 0';
+}
+
+function showAlert(msg,type){
+  const el=document.getElementById('pg-alert');
+  el.className='alert alert-'+type;el.textContent=msg;el.style.display='block';
+  setTimeout(()=>el.style.display='none',3500);
+}
+
+function itemStats(list){
+  let pb=0,pa=0,sb=0,sa=0;
+  list.forEach(t=>{
+    if(t.type==='purchase'){pb+=t.qty;pa+=t.amount;}
+    else if(t.type==='sale'){sb+=t.qty;sa+=t.amount;}
+  });
+  return{pb,pa,sb,sa,profit:sa-pa};
+}
+
+function renderDashboard(){
+  const today=todayStr();
+  const month=today.slice(0,7);
+  const todayTxs=txs.filter(t=>t.date===today);
+  const monthTxs=txs.filter(t=>t.date.startsWith(month));
+  const todayStats=itemStats(todayTxs);
+  const monthStats=itemStats(monthTxs);
+  const totalStock=ITEMS.reduce((a,i)=>a+stock[i],0);
+  const stockVal=ITEMS.reduce((a,i)=>a+stock[i]*avgBuy[i],0);
+  document.getElementById('db-metrics').innerHTML=`
+    <div class="metric"><div class="mlabel">Total stock</div><div class="mval">${F(totalStock)}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div></div>
+    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(stockVal)}</div></div>
+    <div class="metric"><div class="mlabel">Today's sale</div><div class="mval" style="font-size:14px">Rs.${F(todayStats.sa)}</div><div class="msub">${todayStats.sb} bags sold</div></div>
+    <div class="metric"><div class="mlabel">This month profit</div><div class="mval" style="font-size:14px;color:${monthStats.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(monthStats.profit)}</div></div>`;
+  const todayRows=todayTxs.slice().reverse().map(t=>`<tr><td>${t.item.split(' ')[0]}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Buy':'Sell'}</span></td><td>${F(t.qty)}</td><td>Rs.${F(t.amount)}</td></tr>`).join('');
+  document.getElementById('db-today').innerHTML=todayRows||'<tr><td colspan="4" class="empty">No entries today.</td></tr>';
+  const stRows=ITEMS.map(i=>`<tr><td>${i}</td><td>${F(stock[i])}</td><td>${statusBadge(stock[i])}</td></tr>`).join('');
+  document.getElementById('db-stock').innerHTML=stRows;
+  let mRows='',mPB=0,mPA=0,mSB=0,mSA=0;
+  ITEMS.forEach(i=>{
+    const s=itemStats(monthTxs.filter(t=>t.item===i));
+    mPB+=s.pb;mPA+=s.pa;mSB+=s.sb;mSA+=s.sa;
+    mRows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${profitSpan(s.profit)}</td><td>${F(stock[i])}</td></tr>`;
+  });
+  document.getElementById('db-month').innerHTML=mRows;
+  document.getElementById('db-month-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA-mPA)}</td><td></td></tr>`;
+}
+
+function renderDaily(){
+  const date=document.getElementById('dr-date').value;
+  if(!date)return;
+  const list=txs.filter(t=>t.date===date);
+  const st=itemStats(list);
+  document.getElementById('dr-metrics').innerHTML=`
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>
+    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
+  let rows='',fPB=0,fPA=0,fSB=0,fSA=0;
+  ITEMS.forEach(i=>{
+    const s=itemStats(list.filter(t=>t.item===i));
+    if(s.pb===0&&s.sb===0)return;
+    fPB+=s.pb;fPA+=s.pa;fSB+=s.sb;fSA+=s.sa;
+    const abr=s.pb>0?Math.round(s.pa/s.pb):0;
+    const asr=s.sb>0?Math.round(s.sa/s.sb):0;
+    rows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb>0?'Rs.'+F(abr):'-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb>0?'Rs.'+F(asr):'-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
+  });
+  document.getElementById('dr-summary').innerHTML=rows||'<tr><td colspan="8" class="empty">No activity on this date.</td></tr>';
+  if(rows)document.getElementById('dr-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA-fPA)}</td></tr>`;
+  else document.getElementById('dr-foot').innerHTML='';
+  const eRows=list.slice().reverse().map(t=>`
+    <tr><td>${t.time||''}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
+    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party||'-'}</td><td>${t.notes||'-'}</td>
+    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
+  document.getElementById('dr-entries').innerHTML=eRows||'<tr><td colspan="9" class="empty">No entries.</td></tr>';
+}
+
+function renderMonthly(){
+  const month=document.getElementById('mr-month').value;
+  if(!month)return;
+  const list=txs.filter(t=>t.date.startsWith(month));
+  const st=itemStats(list);
+  document.getElementById('mr-metrics').innerHTML=`
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Profit / Loss</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>
+    <div class="metric"><div class="mlabel">Entries</div><div class="mval">${list.length}</div></div>`;
+  let rows='',fPB=0,fPA=0,fSB=0,fSA=0;
+  ITEMS.forEach(i=>{
+    const s=itemStats(list.filter(t=>t.item===i));
+    fPB+=s.pb;fPA+=s.pa;fSB+=s.sb;fSA+=s.sa;
+    const abr=s.pb>0?Math.round(s.pa/s.pb):0;
+    const asr=s.sb>0?Math.round(s.sa/s.sb):0;
+    rows+=`<tr><td>${i}</td><td>${F(s.pb)}</td><td>Rs.${F(s.pa)}</td><td>${s.pb>0?'Rs.'+F(abr):'-'}</td><td>${F(s.sb)}</td><td>Rs.${F(s.sa)}</td><td>${s.sb>0?'Rs.'+F(asr):'-'}</td><td>${profitSpan(s.profit)}</td></tr>`;
+  });
+  document.getElementById('mr-summary').innerHTML=rows;
+  document.getElementById('mr-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(fPB)}</td><td>Rs.${F(fPA)}</td><td></td><td>${F(fSB)}</td><td>Rs.${F(fSA)}</td><td></td><td>${profitSpan(fSA-fPA)}</td></tr>`;
+  const days=[...new Set(list.map(t=>t.date))].sort().reverse();
+  const dRows=days.map(d=>{
+    const dl=list.filter(t=>t.date===d);
+    const ds=itemStats(dl);
+    return`<tr><td>${d}</td><td>Rs.${F(ds.pa)}</td><td>Rs.${F(ds.sa)}</td><td>${profitSpan(ds.profit)}</td><td>${dl.length}</td></tr>`;
+  }).join('');
+  document.getElementById('mr-daily').innerHTML=dRows||'<tr><td colspan="5" class="empty">No data for this month.</td></tr>';
+}
+
+let selItem=ITEMS[0];
+function renderItems(){
+  const btns=document.getElementById('item-btns');
+  btns.innerHTML=ITEMS.map(i=>`<button class="isel-btn${i===selItem?' active':''}" onclick="selectItem('${i}')">${i}</button>`).join('');
+  renderItemDetail();
+}
+function selectItem(i){selItem=i;renderItems();}
+function renderItemDetail(){
+  const list=txs.filter(t=>t.item===selItem);
+  const st=itemStats(list);
+  const stockVal=stock[selItem]*avgBuy[selItem];
+  document.getElementById('iw-metrics').innerHTML=`
+    <div class="metric"><div class="mlabel">Total purchased</div><div class="mval" style="font-size:14px">Rs.${F(st.pa)}</div><div class="msub">${F(st.pb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Total sold</div><div class="mval" style="font-size:14px">Rs.${F(st.sa)}</div><div class="msub">${F(st.sb)} bags</div></div>
+    <div class="metric"><div class="mlabel">Stock left</div><div class="mval">${F(stock[selItem])}<span style="font-size:11px;color:var(--text-secondary)"> bags</span></div><div class="msub">Value Rs.${F(stockVal)}</div></div>
+    <div class="metric"><div class="mlabel">All-time profit</div><div class="mval" style="font-size:14px;color:${st.profit>=0?'#5ec47a':'#e07070'}">Rs.${F(st.profit)}</div></div>`;
+  document.getElementById('iw-alltime').innerHTML=`
+    <tr><td>All time</td><td>${F(st.pb)}</td><td>Rs.${F(st.pa)}</td><td>${F(st.sb)}</td><td>Rs.${F(st.sa)}</td><td>${F(stock[selItem])}</td><td>${profitSpan(st.profit)}</td></tr>`;
+  const months=[...new Set(list.map(t=>t.date.slice(0,7)))].sort().reverse();
+  let mRows='',mPB=0,mPA=0,mSB=0,mSA=0;
+  months.forEach(m=>{
+    const ml=list.filter(t=>t.date.startsWith(m));
+    const ms=itemStats(ml);
+    mPB+=ms.pb;mPA+=ms.pa;mSB+=ms.sb;mSA+=ms.sa;
+    mRows+=`<tr><td>${m}</td><td>${F(ms.pb)}</td><td>Rs.${F(ms.pa)}</td><td>${F(ms.sb)}</td><td>Rs.${F(ms.sa)}</td><td>${profitSpan(ms.profit)}</td></tr>`;
+  });
+  document.getElementById('iw-monthly').innerHTML=mRows||'<tr><td colspan="6" class="empty">No data yet.</td></tr>';
+  if(mRows)document.getElementById('iw-monthly-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td>${F(mPB)}</td><td>Rs.${F(mPA)}</td><td>${F(mSB)}</td><td>Rs.${F(mSA)}</td><td>${profitSpan(mSA-mPA)}</td></tr>`;
+  const txRows=list.slice().reverse().map(t=>`
+    <tr><td>${t.date}</td><td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
+    <td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td><td>${t.party||'-'}</td><td>${t.notes||'-'}</td></tr>`).join('');
+  document.getElementById('iw-txs').innerHTML=txRows||'<tr><td colspan="7" class="empty">No transactions yet.</td></tr>';
+}
+
+function renderHistory(){
+  const fi=document.getElementById('h-item').value;
+  const ft=document.getElementById('h-type').value;
+  const fd=document.getElementById('h-from').value;
+  let list=[...txs].reverse();
+  if(fi)list=list.filter(t=>t.item===fi);
+  if(ft)list=list.filter(t=>t.type===ft);
+  if(fd)list=list.filter(t=>t.date>=fd);
+  document.getElementById('h-empty').style.display=list.length?'none':'block';
+  document.getElementById('h-table').innerHTML=list.map(t=>`
+    <tr><td>${t.date}</td><td>${t.time||''}</td>
+    <td><span class="badge ${t.type==='purchase'?'b-green':'b-red'}">${t.type==='purchase'?'Purchase':'Sale'}</span></td>
+    <td>${t.item}</td><td>${F(t.qty)}</td><td>Rs.${F(t.rate)}</td><td>Rs.${F(t.amount)}</td>
+    <td>${t.party||'-'}</td><td>${t.notes||'-'}</td>
+    <td><button class="btn btn-sm btn-del" onclick="delTx(${t.id})">Del</button></td></tr>`).join('');
+}
+function clearH(){
+  ['h-item','h-type'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('h-from').value='';
+  renderHistory();
+}
+
+function renderStock(){
+  let rows='',totVal=0;
+  ITEMS.forEach(i=>{
+    const val=stock[i]*avgBuy[i];totVal+=val;
+    rows+=`<tr><td>${i}</td><td>${F(stock[i])}</td><td>${avgBuy[i]>0?'Rs.'+F(avgBuy[i]):'-'}</td><td>Rs.${F(val)}</td><td>${statusBadge(stock[i])}</td></tr>`;
+  });
+  document.getElementById('st-table').innerHTML=rows;
+  document.getElementById('st-foot').innerHTML=`<tr class="tfoot-row"><td>Total</td><td></td><td></td><td>Rs.${F(totVal)}</td><td></td></tr>`;
+  const totalBags=ITEMS.reduce((a,i)=>a+stock[i],0);
+  const lowItems=ITEMS.filter(i=>stock[i]<20&&stock[i]>0).length;
+  const outItems=ITEMS.filter(i=>stock[i]<=0).length;
+  document.getElementById('st-metrics').innerHTML=`
+    <div class="metric"><div class="mlabel">Total bags</div><div class="mval">${F(totalBags)}</div></div>
+    <div class="metric"><div class="mlabel">Stock value</div><div class="mval" style="font-size:14px">Rs.${F(totVal)}</div></div>
+    <div class="metric"><div class="mlabel">Low stock items</div><div class="mval" style="color:${lowItems>0?'#e0a840':'#5ec47a'}">${lowItems}</div></div>
+    <div class="metric"><div class="mlabel">Out of stock</div><div class="mval" style="color:${outItems>0?'#e07070':'#5ec47a'}">${outItems}</div></div>`;
+}
+
+function doAdj(){
+  const item=document.getElementById('adj-item').value;
+  const nq=parseInt(document.getElementById('adj-qty').value);
+  const reason=document.getElementById('adj-reason').value.trim();
+  if(isNaN(nq)||nq<0){alert('Enter a valid quantity');return;}
+  const diff=nq-stock[item];
+  stock[item]=nq;
+  txs.push({id:Date.now(),type:'adjust',date:todayStr(),time:timeStr(),item,qty:Math.abs(diff),rate:0,amount:0,party:'',notes:reason||'Physical count adjustment'});
+  save();renderStock();
+  showAlert('Stock updated: '+item+' is now '+nq+' bags.','ok');
+  document.getElementById('adj-qty').value='';
+}
+
+function delTx(id){
+  if(!confirm('Delete this entry? Note: stock will NOT be auto-reversed. Adjust manually if needed.'))return;
+  txs=txs.filter(t=>t.id!==id);save();
+  renderHistory();renderDaily();
+}
+
+function populateSelects(){
+  ['e-item','adj-item'].forEach(id=>{
+    document.getElementById(id).innerHTML=ITEMS.map(i=>`<option value="${i}">${i}</option>`).join('');
+  });
+  document.getElementById('h-item').innerHTML='<option value="">All items</option>'+ITEMS.map(i=>`<option value="${i}">${i}</option>`).join('');
+}
+
+const now=new Date();
+document.getElementById('hdr-date').textContent=now.toLocaleDateString('en-PK',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+document.getElementById('e-date').value=todayStr();
+document.getElementById('dr-date').value=todayStr();
+document.getElementById('mr-month').value=thisMonth();
+
+load();populateSelects();renderDashboard();
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+  import { getDatabase, ref, set, onValue, push } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+  // TODO: Replace with YOUR actual config from Firebase Console
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCXEKvjK8PCL4MwfaIPPXdWYDvZQ1-Iq_U",
+  authDomain: "whole-sale-dealer-app.firebaseapp.com",
+  databaseURL: "https://whole-sale-dealer-app-default-rtdb.firebaseio.com",
+  projectId: "whole-sale-dealer-app",
+  storageBucket: "whole-sale-dealer-app.firebasestorage.app",
+  messagingSenderId: "897165861174",
+  appId: "1:897165861174:web:d0bb289dc0c842df069397",
+  measurementId: "G-JG05KC2QYL"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
+  const dbRef = ref(db, 'inventory_data');
+
+  // Global variables
+  const ITEMS = ['Sehla Rice','Short Steam Rice','Royal Steam Rice','NR Steam Rice','Wheat (Gehun)','Channe','Bajra','Masala Jaat'];
+  let txs = [], stock = {}, avgBuy = {};
+
+  // 1. Modified Load: Now listens to the Cloud Database
+  function startSync() {
+    onValue(dbRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        txs = data.txs || [];
+        stock = data.stock || {};
+        avgBuy = data.avgBuy || {};
+      }
+      
+      // Ensure all items exist in stock/avg object
+      ITEMS.forEach(i => {
+        if (!stock[i]) stock[i] = 0;
+        if (!avgBuy[i]) avgBuy[i] = 0;
+      });
+
+      // Refresh whatever page is currently active
+      const activeTab = document.querySelector('.tab.active').textContent.toLowerCase();
+      if (activeTab.includes('dashboard')) renderDashboard();
+      if (activeTab.includes('daily')) renderDaily();
+      // ... and so on for other tabs
+      renderDashboard(); // Default refresh
+    });
+  }
+
+  // 2. Modified Save: Pushes to the Cloud
+  function saveToCloud() {
+    set(dbRef, {
+      txs: txs,
+      stock: stock,
+      avgBuy: avgBuy
+    });
+  }
+
+  // --- RE-ATTACH YOUR EXISTING FUNCTIONS TO THE GLOBAL WINDOW ---
+  // Since we are using type="module", we need to attach functions to window
+  // so the HTML "onclick" buttons can still find them.
+
+  window.saveEntry = function() {
+    const type = document.getElementById('e-type').value;
+    const date = document.getElementById('e-date').value;
+    const item = document.getElementById('e-item').value;
+    const qty = parseInt(document.getElementById('e-qty').value);
+    const rate = parseFloat(document.getElementById('e-rate').value);
+    const party = document.getElementById('e-party').value.trim();
+    const notes = document.getElementById('e-notes').value.trim();
+
+    if(!date || !qty || qty < 1 || !rate || rate < 0) {
+      showAlert('Fill in all fields.', 'warn'); return;
+    }
+    if(type === 'sale' && stock[item] < qty) {
+      showAlert('Insufficient stock!', 'warn'); return;
+    }
+
+    const amount = Math.round(qty * rate);
+    if(type === 'purchase') {
+      const os = stock[item], oa = avgBuy[item];
+      stock[item] += qty;
+      avgBuy[item] = os === 0 ? rate : Math.round((oa * os + rate * qty) / stock[item]);
+    } else {
+      stock[item] -= qty;
+    }
+
+    txs.push({id: Date.now(), type, date, time: new Date().toLocaleTimeString(), item, qty, rate, amount, party, notes});
+    
+    saveToCloud(); // Save to Firebase
+    showAlert('Saved to Cloud!', 'ok');
+    ['e-qty','e-rate','e-party','e-notes'].forEach(id => document.getElementById(id).value = '');
+  };
+
+  // ... (Paste the rest of your render functions here, attaching them to window)
+  window.nav = nav; 
+  window.renderDashboard = renderDashboard;
+  // etc.
+
+  // Initialization
+  populateSelects();
+  startSync(); 
+</script>
+</body>
+</html>
